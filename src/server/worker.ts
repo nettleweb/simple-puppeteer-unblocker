@@ -70,7 +70,8 @@ const chrome = await puppeteer.launch({
 		"--window-position=0,0"
 	],
 	ignoreDefaultArgs: [
-		"--hide-scrollbars"
+		"--hide-scrollbars",
+		"--enable-automation"
 	]
 });
 

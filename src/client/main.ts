@@ -108,7 +108,9 @@ import io from "socket.io-client"
 		transports: ["polling", "websocket"],
 		autoConnect: true,
 		reconnection: true,
+		timestampParam: "v",
 		rememberUpgrade: true,
+		timestampRequests: true,
 		reconnectionDelay: 5000,
 		rejectUnauthorized: true,
 		closeOnBeforeunload: true
