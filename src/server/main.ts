@@ -3,6 +3,7 @@ import dns from "dns";
 import Path from "path";
 import http from "http";
 import eiows from "eiows";
+import stream from "stream";
 import worker from "worker_threads";
 import process from "process";
 import { Server } from "socket.io";
@@ -96,7 +97,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse) {
 			"Referrer-Policy": "no-referrer",
 			"Permissions-Policy": "camera=(), gyroscope=(), microphone=(), geolocation=(), local-fonts=(), magnetometer=(), accelerometer=(), idle-detection=(), storage-access=(), browsing-topics=(), display-capture=(), encrypted-media=(), compute-pressure=(), window-management=(), xr-spatial-tracking=(), attribution-reporting=()",
 			"X-Content-Type-Options": "nosniff",
-			//"Content-Security-Policy": "img-src 'self' data:; base-uri 'self'; font-src 'self'; child-src 'self'; frame-src 'self'; media-src 'self'; style-src 'self'; object-src 'self'; script-src 'self'; worker-src 'self'; connect-src 'self'; default-src 'self'; manifest-src 'self'; sandbox allow-scripts allow-same-origin; upgrade-insecure-requests",
+			"Content-Security-Policy": "img-src 'self' data:; base-uri 'self'; font-src 'self'; child-src 'self'; frame-src 'self'; media-src 'self'; style-src 'self'; object-src 'self'; script-src 'self'; worker-src 'self'; connect-src 'self'; default-src 'self'; manifest-src 'self'; sandbox allow-scripts allow-same-origin; upgrade-insecure-requests",
 			"Cross-Origin-Opener-Policy": "same-origin",
 			"Cross-Origin-Resource-Policy": "same-origin",
 			"Cross-Origin-Embedder-Policy": "require-corp"
@@ -112,15 +113,36 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse) {
 	}
 }
 
-function handleSignal(signal: string) {
-	if (__state__ === 0) {
-		__state__ = 1;
+function handleUpgrade(req: http.IncomingMessage, sock: stream.Duplex, head: Buffer) {
+	const path = req.url;
+	const host = req.headers.host;
 
+	if (path == null || host == null || path[0] !== "/") {
+		sock.end("Bad Request", "utf-8");
+		return;
+	}
+
+	if (path.startsWith("/%FD%BF%80%90%80%81%0A/"))
+		eio.handleUpgrade(req as any, sock, head);
+	else
+		sock.end("Forbidden", "utf-8");
+}
+
+function handleSignal(signal: string) {
+	if (Reflect.get(process, "__closing") == null) {
 		stderr.write("\n\nReceived signal: " + signal + "\n");
 		stderr.write("Stopping services...\n");
+		Reflect.set(process, "__closing", 1);
 
 		io.disconnectSockets(true);
-		process.exit(0);
+		eio.close();
+
+		httpServer.close((err) => {
+			if (err != null) {
+				console.error(err);
+				process.exit(1);
+			} else process.exit(0);
+		});
 	}
 }
 
@@ -128,29 +150,23 @@ function handleSignal(signal: string) {
 // INIT
 ////////////////////////////////////////////////////////////
 
-let __state__: number = 0;
-const [, , ...args] = process.argv;
-const { env, stdin, stdout, stderr } = process;
+const { env, argv: args, stdin, stdout, stderr } = process;
 
-for (const k of Object.getOwnPropertyNames(env))
+for (const k of Object.getOwnPropertyNames(Object.setPrototypeOf(env, null)))
 	delete env[k];
 
-Object.setPrototypeOf(env, null);
 env["PATH"] = "/sbin:/bin";
 env["HOME"] = "/tmp/user";
 env["LANG"] = "C.UTF-8";
 env["LC_ALL"] = "C.UTF-8";
 
-try {
-	stdin.setDefaultEncoding("utf-8");
-	stdin.setEncoding("utf-8");
-	stdout.setDefaultEncoding("utf-8");
-	stdout.setEncoding("utf-8");
-	stderr.setDefaultEncoding("utf-8");
-	stderr.setEncoding("utf-8");
-} catch (err) {
-	// ignore
-}
+args.splice(0, 2);
+stdin.setEncoding("utf-8");
+stdout.setEncoding("utf-8");
+stderr.setEncoding("utf-8");
+stdin.setDefaultEncoding("utf-8");
+stdout.setDefaultEncoding("utf-8");
+stderr.setDefaultEncoding("utf-8");
 
 process.chdir(Path.dirname(Path.dirname(import.meta.dirname)));
 
@@ -201,29 +217,8 @@ const httpServer = http.createServer({
 	requestTimeout: 15000
 }, void 0);
 
-httpServer.on("request", (req, res) => {
-	try {
-		handleRequest(req, res);
-	} catch (err) {
-		console.error("HTTP Request Handler Error: ", err);
-		res.writeHead(500, "", { "Content-Type": "text/plain" });
-		res.end("500 Internal Server Error", "utf-8");
-	}
-});
-httpServer.on("upgrade", (req, sock, head) => {
-	const path = req.url;
-	const host = req.headers.host;
-
-	if (path == null || host == null || path[0] !== "/") {
-		sock.end("Bad Request", "utf-8");
-		return;
-	}
-
-	if (path.startsWith("/%FD%BF%80%90%80%81%0A/"))
-		eio.handleUpgrade(req as any, sock, head);
-	else
-		sock.end("Forbidden", "utf-8");
-});
+httpServer.on("request", handleRequest);
+httpServer.on("upgrade", handleUpgrade);
 httpServer.on("error", (err) => {
 	console.error("HTTP Server Error: ", err);
 });
