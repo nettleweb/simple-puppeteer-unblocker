@@ -4,19 +4,17 @@ import process from "process";
 import puppeteer from "puppeteer";
 const port = worker.parentPort;
 const data = worker.workerData;
-if (worker.isMainThread || port == null)
+if (worker.isMainThread || port == null || data == null || typeof data !== "object")
     throw new Error("Invalid script execution context");
-if (data == null || typeof data !== "object")
-    throw new Error("Invalid worker data");
-const touch = data.touch;
-const width = Math.max(Math.min(data.width, 1280), 300);
-const height = Math.max(Math.min(data.height, 1280), 300);
-const dataDir = data.dataDir;
+const touch = data.touch || false;
+const width = Math.max(Math.min(data.width || 1280, 1280), 300);
+const height = Math.max(Math.min(data.height || 720, 720), 300);
+const dataDir = process.argv[2];
 const landscape = width >= height;
 let focused = -1;
 const pages = [];
 const stubImage = fs.readFileSync("./res/loading.jpg");
-fs.cpSync("./local/chrome/data", dataDir, {
+await fs.promises.cp("./local/chrome/data", dataDir, {
     force: true,
     recursive: true,
     errorOnExist: true,
@@ -25,7 +23,7 @@ fs.cpSync("./local/chrome/data", dataDir, {
 const chrome = await puppeteer.launch({
     env: {},
     pipe: true,
-    dumpio: false,
+    dumpio: true,
     browser: "chrome",
     channel: "chrome",
     timeout: 8000,
@@ -43,6 +41,10 @@ const chrome = await puppeteer.launch({
         hasTouch: false,
         isLandscape: true,
         deviceScaleFactor: 1
+    },
+    downloadBehavior: {
+        policy: "deny",
+        downloadPath: dataDir
     },
     args: [
         "--use-angle=vulkan",
@@ -99,13 +101,16 @@ async function updatePageSettings(page) {
     await page.setBypassCSP(true);
     await page.setCacheEnabled(true);
     await page.setJavaScriptEnabled(true);
-    await page.setBypassServiceWorker(true);
+    await page.setExtraHTTPHeaders({
+        "DNT": "1",
+        "Sec-GPC": "1"
+    });
     await page.setGeolocation({
         accuracy: 1,
         latitude: 0,
         longitude: 0
     });
-    await page.setUserAgent("Mozilla/5.0 (X11; Linux x86_64; rv:132.0) Gecko/20100101 Firefox/132.0", {
+    await page.setUserAgent("Mozilla/5.0 (X11; Linux x86_64; rv:134.0) Gecko/20100101 Firefox/134.0", {
         architecture: "",
         bitness: "",
         brands: [],
@@ -154,25 +159,29 @@ async function updatePageSettings(page) {
             catch (err) {
                 // ignore
             }
-            port.postMessage(["url", page.url()]);
-            port.postMessage(["tabinfo", i, title, favicon]);
+            port.postMessage(Buffer.from("0" /* MessageID.url */ + "\n" + page.url(), "utf-8"));
+            port.postMessage(Buffer.from("3" /* MessageID.tabinfo */ + "\n" + i.toString(36) + "\n" + title + "\n" + favicon, "utf-8"));
         }
     });
     page.on("close", () => {
         const i = pages.indexOf(page, 0);
         if (i >= 0) {
             pages.splice(i, 1);
-            port.postMessage(["tabclose", i]);
             if (i === focused)
                 focused--;
+            port.postMessage(Buffer.from("4" /* MessageID.tabclose */ + "\n" + i.toString(36), "utf-8"));
         }
     });
     page.on("popup", (page) => {
         if (page != null) {
-            updatePageSettings(page).catch(() => { });
-            port.postMessage(["tabopen", ++focused]);
-            port.postMessage(["url", page.url()]);
-            pages.push(page);
+            if (pages.length < 255) {
+                port.postMessage(Buffer.from("2" /* MessageID.tabopen */ + "\n" + (++focused), "utf-8"));
+                port.postMessage(Buffer.from("0" /* MessageID.url */ + "\n" + page.url(), "utf-8"));
+                updatePageSettings(page).catch(() => { });
+                pages.push(page);
+            }
+            else
+                page.close({ runBeforeUnload: false }).catch(() => { });
         }
     });
 }
@@ -187,152 +196,141 @@ function shutdown() {
         process.exit(0);
     });
 }
-port.on("message", async (args) => {
-    switch (args.shift() || "") {
-        case "newtab":
-            try {
-                const page = await chrome.newPage();
-                await updatePageSettings(page);
-                port.postMessage(["tabopen", ++focused]);
-                port.postMessage(["url", page.url()]);
-                pages.push(page);
-                let url = args.shift();
-                if (url != null && (url = checkRewriteURL(new URL(url, "https://nettleweb.com/"))) != null) {
-                    await page.goto(url, {
-                        referer: "",
-                        timeout: 10000,
-                        waitUntil: "load"
-                    });
+port.on("message", async (data) => {
+    try {
+        switch ((data = Buffer.from(data))[1]) {
+            case 0 /* MessageID.stop */:
+                shutdown();
+                break;
+            case 1 /* MessageID.event */:
+                {
+                    const page = pages[focused];
+                    if (page != null) {
+                        const event = JSON.parse(data.toString("utf-8", 2, data.byteLength));
+                        switch (event.type) {
+                            case "wheel":
+                                await page.mouse.wheel({ deltaX: event.deltaX, deltaY: event.deltaY });
+                                break;
+                            case "keyup":
+                                await page.keyboard.up(event.key);
+                                break;
+                            case "keydown":
+                                await page.keyboard.down(event.key);
+                                break;
+                            case "mouseup":
+                                await page.mouse.up({ button: event.button });
+                                break;
+                            case "mousedown":
+                                await page.mouse.down({ button: event.button });
+                                break;
+                            case "mousemove":
+                                await page.mouse.move(event.x, event.y, { steps: 1 });
+                                break;
+                            case "touchend":
+                                await page.touchscreen.touchEnd();
+                                break;
+                            case "touchmove":
+                                await page.touchscreen.touchMove(event.x, event.y);
+                                break;
+                            case "touchstart":
+                                await page.touchscreen.touchStart(event.x, event.y);
+                                break;
+                            default:
+                                break;
+                        }
+                    }
                 }
-            }
-            catch (err) {
-                // ignore
-            }
-            break;
-        case "navigate":
-            try {
-                const page = pages[focused];
-                if (page != null) {
-                    const url = checkRewriteURL(new URL(args.shift(), "https://nettleweb.com/"));
-                    if (url != null) {
-                        await page.goto(url, {
-                            referer: "",
+                break;
+            case 2 /* MessageID.newtab */:
+                if (pages.length < 255) {
+                    const page = await chrome.newPage();
+                    await updatePageSettings(page);
+                    port.postMessage(Buffer.from("2" /* MessageID.tabopen */ + "\n" + (++focused), "utf-8"));
+                    port.postMessage(Buffer.from("0" /* MessageID.url */ + "\n" + page.url(), "utf-8"));
+                    pages.push(page);
+                    const length = data.byteLength;
+                    if (length > 2) {
+                        const str = data.toString("utf-8", 2, length);
+                        console.log(str);
+                        const url = checkRewriteURL(new URL(str));
+                        if (url != null) {
+                            await page.goto(url, {
+                                referer: "",
+                                timeout: 10000,
+                                waitUntil: "load"
+                            });
+                        }
+                    }
+                }
+                break;
+            case 3 /* MessageID.back */:
+                {
+                    const page = pages[focused];
+                    if (page != null) {
+                        await page.goBack({
                             timeout: 10000,
                             waitUntil: "load"
                         });
                     }
                 }
-            }
-            catch (err) {
-                // ignore
-            }
-            break;
-        case "back":
-            try {
-                const page = pages[focused];
-                if (page != null) {
-                    await page.goBack({
-                        timeout: 10000,
-                        waitUntil: "load"
-                    });
-                }
-            }
-            catch (err) {
-                // ignore
-            }
-            break;
-        case "forward":
-            try {
-                const page = pages[focused];
-                if (page != null) {
-                    await page.goForward({
-                        timeout: 10000,
-                        waitUntil: "load"
-                    });
-                }
-            }
-            catch (err) {
-                // ignore
-            }
-            break;
-        case "refresh":
-            try {
-                const page = pages[focused];
-                if (page != null) {
-                    await page.reload({
-                        timeout: 10000,
-                        waitUntil: "load"
-                    });
-                }
-            }
-            catch (err) {
-                // ignore
-            }
-            break;
-        case "focustab":
-            {
-                const id = args.shift();
-                if (pages[id] != null)
-                    focused = id;
-            }
-            break;
-        case "closetab":
-            try {
-                const page = pages[args.shift()];
-                if (page != null)
-                    await page.close({ runBeforeUnload: false });
-            }
-            catch (err) {
-                // ignore
-            }
-            break;
-        case "event":
-            try {
-                const page = pages[focused];
-                if (page != null) {
-                    const event = args.shift();
-                    switch (event.type) {
-                        case "wheel":
-                            await page.mouse.wheel({ deltaX: event.deltaX, deltaY: event.deltaY });
-                            break;
-                        case "keyup":
-                            await page.keyboard.up(event.key);
-                            break;
-                        case "keydown":
-                            await page.keyboard.down(event.key);
-                            break;
-                        case "mouseup":
-                            await page.mouse.up({ button: event.button });
-                            break;
-                        case "mousedown":
-                            await page.mouse.down({ button: event.button });
-                            break;
-                        case "mousemove":
-                            await page.mouse.move(event.x, event.y, { steps: 1 });
-                            break;
-                        case "touchend":
-                            await page.touchscreen.touchEnd();
-                            break;
-                        case "touchmove":
-                            await page.touchscreen.touchMove(event.x, event.y);
-                            break;
-                        case "touchstart":
-                            await page.touchscreen.touchStart(event.x, event.y);
-                            break;
-                        default:
-                            break;
+                break;
+            case 4 /* MessageID.forward */:
+                {
+                    const page = pages[focused];
+                    if (page != null) {
+                        await page.goForward({
+                            timeout: 10000,
+                            waitUntil: "load"
+                        });
                     }
                 }
-            }
-            catch (err) {
-                // ignore
-            }
-            break;
-        case "stop":
-            shutdown();
-            break;
-        default:
-            break;
+                break;
+            case 5 /* MessageID.refresh */:
+                {
+                    const page = pages[focused];
+                    if (page != null) {
+                        await page.reload({
+                            timeout: 10000,
+                            waitUntil: "load"
+                        });
+                    }
+                }
+                break;
+            case 6 /* MessageID.focustab */:
+                {
+                    const id = data[2] || 0;
+                    if (pages[id] != null)
+                        focused = id;
+                }
+                break;
+            case 7 /* MessageID.closetab */:
+                {
+                    const page = pages[data[2] || 0];
+                    if (page != null)
+                        await page.close({ runBeforeUnload: false });
+                }
+                break;
+            case 8 /* MessageID.navigate */:
+                {
+                    const page = pages[focused];
+                    if (page != null) {
+                        const url = checkRewriteURL(new URL(data.toString("utf-8", 2, data.byteLength)));
+                        if (url != null) {
+                            await page.goto(url, {
+                                referer: "",
+                                timeout: 10000,
+                                waitUntil: "load"
+                            });
+                        }
+                    }
+                }
+                break;
+            default:
+                break;
+        }
+    }
+    catch (err) {
+        // ignore
     }
 });
 port.on("messageerror", (err) => {
@@ -345,7 +343,6 @@ process.on("SIGQUIT", shutdown);
 process.on("unhandledRejection", () => {
     // ignore
 });
-port.postMessage(["ready", width, height]);
 const loop = async () => {
     const page = pages[focused];
     if (page != null) {
@@ -364,8 +361,9 @@ const loop = async () => {
         catch (err) {
             // ignore
         }
-        port.postMessage(["frame", buffer]);
+        port.postMessage(buffer, [buffer.buffer]);
     }
     setTimeout(loop, 100);
 };
+port.postMessage(Buffer.from("1" /* MessageID.ready */ + "\n" + width.toString(36) + "\n" + height.toString(36), "utf-8"));
 await loop();

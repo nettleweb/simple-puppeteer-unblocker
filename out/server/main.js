@@ -5,8 +5,7 @@ import http from "http";
 import eiows from "eiows";
 import worker from "worker_threads";
 import process from "process";
-import { Server } from "socket.io";
-import { Server as Engine } from "engine.io";
+import { Server } from "engine.io";
 function getFilePath(path) {
     if (fs.existsSync(path = Path.resolve(Path.join("./static/", path)))) {
         if (fs.lstatSync(path, { bigint: true, throwIfNoEntry: true }).isDirectory())
@@ -85,6 +84,7 @@ function handleRequest(req, res) {
     if (path != null) {
         res.writeHead(200, "", {
             "Content-Type": getFileMimeType(path),
+            "Content-Length": fs.statSync(path, { bigint: true, throwIfNoEntry: true }).size.toString(10),
             "Referrer-Policy": "no-referrer",
             "Permissions-Policy": "camera=(), gyroscope=(), microphone=(), geolocation=(), local-fonts=(), magnetometer=(), accelerometer=(), idle-detection=(), storage-access=(), browsing-topics=(), display-capture=(), encrypted-media=(), compute-pressure=(), window-management=(), xr-spatial-tracking=(), attribution-reporting=()",
             "X-Content-Type-Options": "nosniff",
@@ -93,10 +93,16 @@ function handleRequest(req, res) {
             "Cross-Origin-Resource-Policy": "same-origin",
             "Cross-Origin-Embedder-Policy": "require-corp"
         });
-        if (method === "GET")
-            res.end(fs.readFileSync(path), "utf-8");
-        else
+        if (method === "HEAD") {
             res.end();
+            return;
+        }
+        fs.createReadStream(path, {
+            start: 0,
+            autoClose: true,
+            emitClose: true,
+            highWaterMark: 32768
+        }).pipe(res, { end: true });
     }
     else {
         res.writeHead(404, "", { "Content-Type": "text/plain" });
@@ -120,8 +126,7 @@ function handleSignal(signal) {
         stderr.write("\n\nReceived signal: " + signal + "\n");
         stderr.write("Stopping services...\n");
         Reflect.set(process, "__closing", 1);
-        io.disconnectSockets(true);
-        eio.close();
+        httpServer.closeAllConnections();
         httpServer.close((err) => {
             if (err != null) {
                 console.error(err);
@@ -207,7 +212,7 @@ httpServer.listen(9801, "0.0.0.0", 255, () => {
 //////////////////////////////////////////////////
 // socket.io
 //////////////////////////////////////////////////
-const eio = new Engine({
+const eio = new Server({
     wsEngine: eiows.Server,
     transports: ["polling", "websocket"],
     pingTimeout: 10000,
@@ -217,108 +222,99 @@ const eio = new Engine({
     perMessageDeflate: true,
     maxHttpBufferSize: 1024
 });
-const io = new Server({
-    path: "/%FD%BF%80%90%80%81%0A/",
-    connectTimeout: 20000,
-    destroyUpgrade: true,
-    destroyUpgradeTimeout: 1000,
-    cleanupEmptyChildNamespaces: true
-});
-io.on("connection", (socket) => {
-    let endSession = null;
-    socket.on("disconnect", () => {
-        if (endSession != null)
-            endSession();
-        socket.disconnect(true);
-    });
-    socket.on("es", () => {
-        if (endSession != null)
-            endSession();
-    });
-    socket.on("ns", (opt) => {
-        if (endSession != null || opt == null || typeof opt !== "object") {
-            socket.disconnect(true);
-            return;
-        }
-        const { width, height, touch } = opt;
-        if (typeof width !== "number" || typeof height !== "number" || typeof touch !== "boolean") {
-            socket.disconnect(true);
-            return;
-        }
-        const dataDir = "./local/sessions/" + Date.now().toString(16);
-        const thread = new worker.Worker(Path.join(import.meta.dirname, "worker.js"), {
-            env: env,
-            name: "Handler",
-            argv: ["lvl=256"],
-            stdin: false,
-            stdout: false,
-            stderr: false,
-            workerData: {
-                touch: touch,
-                width: width,
-                height: height,
-                dataDir: dataDir
-            }
-        });
-        const callback = (...args) => {
-            thread.postMessage(args);
-        };
-        endSession = () => {
-            endSession = null;
-            socket.offAny(callback);
+eio.on("connection", (socket) => {
+    let thread;
+    socket.on("close", () => {
+        if (thread != null) {
+            thread.postMessage(Buffer.of(0, 0 /* MessageID.stop */));
             thread.removeAllListeners();
-            thread.postMessage(["stop"]);
-        };
-        socket.onAny(callback);
-        thread.on("message", (args) => {
-            Reflect.apply(socket.emit, socket, args);
-        });
-        thread.on("error", (err) => {
-            console.error("Worker Error: ", err);
-            if (endSession != null) {
-                endSession = null;
-                socket.offAny(callback);
-                thread.removeAllListeners();
-                if (fs.existsSync(dataDir)) {
-                    // manual cleanup is required since the worker did not exit properly
-                    fs.rm(dataDir, {
-                        force: true,
-                        recursive: true,
-                        maxRetries: 5,
-                        retryDelay: 500
-                    }, (err) => {
-                        if (err != null) {
-                            console.error(err);
+            socket.removeAllListeners("close");
+            socket.removeAllListeners("message");
+        }
+        socket.close(true);
+    });
+    socket.on("message", (e) => {
+        switch (e[0]) {
+            case 2:
+                if (thread != null)
+                    thread.postMessage(e);
+                break;
+            case 1:
+                if (thread == null) {
+                    try {
+                        const data = JSON.parse(e.toString("utf-8", 1, e.byteLength));
+                        if (data == null || typeof data !== "object") {
+                            socket.close(true);
+                            return;
                         }
-                    });
-                }
-            }
-        });
-        thread.on("exit", (code) => {
-            if (endSession != null) {
-                endSession = null;
-                socket.offAny(callback);
-                thread.removeAllListeners();
-                if (code !== 0) {
-                    console.error("Worker Error: Worker exited with error code: " + code);
-                    if (fs.existsSync(dataDir)) {
-                        fs.rm(dataDir, {
-                            force: true,
-                            recursive: true,
-                            maxRetries: 5,
-                            retryDelay: 500
-                        }, (err) => {
-                            if (err != null) {
-                                console.error(err);
+                        const dataDir = "./local/sessions/" + process.hrtime.bigint().toString(36);
+                        const mThread = new worker.Worker(Path.join(import.meta.dirname, "worker.js"), {
+                            env: env,
+                            name: "Handler",
+                            argv: [dataDir],
+                            eval: false,
+                            stdin: false,
+                            stdout: false,
+                            stderr: false,
+                            workerData: data,
+                            resourceLimits: {
+                                stackSizeMb: 2,
+                                codeRangeSizeMb: 16,
+                                maxOldGenerationSizeMb: 512,
+                                maxYoungGenerationSizeMb: 16
                             }
                         });
+                        mThread.on("message", (msg) => {
+                            socket.send(msg, { compress: true });
+                        });
+                        mThread.on("error", (err) => {
+                            console.error("Worker Error: ", err);
+                            mThread.removeAllListeners();
+                            thread = void 0;
+                            if (fs.existsSync(dataDir)) {
+                                // manual cleanup is required since the worker did not exit properly
+                                fs.rm(dataDir, {
+                                    force: true,
+                                    recursive: true,
+                                    maxRetries: 5,
+                                    retryDelay: 500
+                                }, (err) => {
+                                    if (err != null)
+                                        console.error("Worker Error: Failed to cleanup session directory: ", err);
+                                });
+                            }
+                        });
+                        mThread.on("exit", (code) => {
+                            mThread.removeAllListeners();
+                            thread = void 0;
+                            if (code !== 0) {
+                                console.error("Worker Error: Worker exited with error code: ", code);
+                                if (fs.existsSync(dataDir)) {
+                                    fs.rm(dataDir, {
+                                        force: true,
+                                        recursive: true,
+                                        maxRetries: 5,
+                                        retryDelay: 500
+                                    }, (err) => {
+                                        if (err != null)
+                                            console.error("Worker Error: Failed to cleanup session directory: ", err);
+                                    });
+                                }
+                            }
+                        });
+                        thread = mThread;
+                    }
+                    catch (err) {
+                        console.error("Worker Setup Error: Failed to start worker thread: ", err);
                     }
                 }
-            }
-        });
+                break;
+            default:
+                socket.close(true);
+                break;
+        }
     });
 });
-io.bind(eio);
 //////////////////////////////////////////////////
 // Error Handlers
 //////////////////////////////////////////////////

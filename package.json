@@ -5,12 +5,13 @@
 	"dependencies": {
 		"eiows": "^7.1.2",
 		"engine.io": "^6.6.2",
-		"puppeteer": "^23.11.1",
-		"socket.io": "^4.8.1"
+		"puppeteer": "^24.1.0"
 	},
 	"devDependencies": {
-		"socket.io-client": "^4.8.1",
-		"ts-loader": "^9.5.1",
+		"@types/node": "^22.10.7",
+		"engine.io-client": "^6.6.2",
+		"terser-webpack-plugin": "^5.3.11",
+		"ts-loader": "^9.5.2",
 		"typescript": "^5.7.2",
 		"webpack": "^5.97.1",
 		"webpack-cli": "^6.0.1"
