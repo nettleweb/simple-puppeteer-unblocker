@@ -7,8 +7,8 @@ const data = worker.workerData;
 if (worker.isMainThread || port == null || data == null || typeof data !== "object")
     throw new Error("Invalid script execution context");
 const touch = data.touch || false;
-const width = Math.max(Math.min(data.width || 1280, 1280), 300);
-const height = Math.max(Math.min(data.height || 720, 720), 300);
+const width = Math.max(Math.min(data.width || 1280, 1600), 300);
+const height = Math.max(Math.min(data.height || 720, 1600), 300);
 const dataDir = process.argv[2];
 const landscape = width >= height;
 let focused = -1;

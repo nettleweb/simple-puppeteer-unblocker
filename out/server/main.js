@@ -2,7 +2,6 @@ import fs from "fs";
 import dns from "dns";
 import Path from "path";
 import http from "http";
-import eiows from "eiows";
 import worker from "worker_threads";
 import process from "process";
 import { Server } from "engine.io";
@@ -128,12 +127,9 @@ function handleSignal(signal) {
         Reflect.set(process, "__closing", 1);
         httpServer.closeAllConnections();
         httpServer.close((err) => {
-            if (err != null) {
-                console.error(err);
-                process.exit(1);
-            }
-            else
-                process.exit(0);
+            if (err != null)
+                console.log("[Ignore]", String(err));
+            process.exit(0);
         });
     }
 }
@@ -149,9 +145,6 @@ env["LANG"] = "C.UTF-8";
 env["LC_ALL"] = "C.UTF-8";
 args.splice(0, 2);
 stdin.setEncoding("utf-8");
-stdout.setEncoding("utf-8");
-stderr.setEncoding("utf-8");
-stdin.setDefaultEncoding("utf-8");
 stdout.setDefaultEncoding("utf-8");
 stderr.setDefaultEncoding("utf-8");
 process.chdir(Path.dirname(Path.dirname(import.meta.dirname)));
@@ -213,7 +206,6 @@ httpServer.listen(9801, "0.0.0.0", 255, () => {
 // socket.io
 //////////////////////////////////////////////////
 const eio = new Server({
-    wsEngine: eiows.Server,
     transports: ["polling", "websocket"],
     pingTimeout: 10000,
     pingInterval: 15000,
@@ -329,3 +321,9 @@ process.on("uncaughtException", (error, origin) => {
 process.on("unhandledRejection", () => {
     // ignore
 });
+// send ready signal to pm2
+{
+    const send = process.send;
+    if (send != null)
+        send("ready", void 0, { keepOpen: false });
+}

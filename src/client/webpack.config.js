@@ -68,7 +68,7 @@ const config = {
 					preamble: "https://nettleweb.com/\n\n\n/*! Copyright (C) 2024 nettleweb.com; All rights reserved. !*/\n\"use strict\";\n",
 					ascii_only: true,
 					semicolons: true,
-					max_line_len: 300,
+					max_line_len: 500,
 					inline_script: false
 				},
 				compress: {
@@ -76,7 +76,7 @@ const config = {
 					arguments: true,
 					hoist_funs: true,
 					keep_fargs: false,
-					drop_console: false
+					drop_console: true
 				}
 			}
 		})],

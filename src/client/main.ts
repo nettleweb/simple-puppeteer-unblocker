@@ -167,323 +167,314 @@ import { Socket } from "engine.io-client";
 </div>`;
 	body.prepend(errEl);
 
-	{
-		const tabs = $("tabs");
-		const address = $("address") as HTMLInputElement;
-		const msgElem = $("message");
-		const container = $("container");
+	const tabs = $("tabs");
+	const address = $("address") as HTMLInputElement;
+	const msgElem = $("message");
+	const tabElems = tabs.children;
+	const container = $("container");
 
-		const canvas = doc.createElement("canvas");
-		canvas.width = 1280;
-		canvas.height = 720;
-		canvas.tabIndex = 1;
-		canvas.autofocus = true;
-		container.appendChild(canvas);
+	const canvas = doc.createElement("canvas");
+	canvas.width = 1280;
+	canvas.height = 720;
+	canvas.tabIndex = 1;
+	canvas.autofocus = true;
+	container.appendChild(canvas);
 
-		const pages: PageInfo[] = [];
-		const buttons: string[] = ["left", "middle", "right", "back", "forward"];
-		const options: string = JSON.stringify({
-			touch: win.navigator.maxTouchPoints > 0,
-			width: Math.max(body.clientWidth, 300),
-			height: Math.max(body.clientHeight - 77, 300)
-		}, void 0, "\t");
+	let width: number = Math.max(body.clientWidth, 300);
+	let height: number = Math.max(body.clientHeight - 77, 300);
+	let curTabId: number = -1;
 
-		const tabElems = tabs.children;
-		let currentTabId: number = -1;
+	const pages: PageInfo[] = [];
+	const buttons: string[] = ["left", "middle", "right", "back", "forward"];
+	const options: string = JSON.stringify({
+		touch: win.navigator.maxTouchPoints > 0,
+		width: width,
+		height: height
+	}, void 0, "\t");
 
-		const context = canvas.getContext("bitmaprenderer", { alpha: false })!;
-		if (context == null) {
-			error("Error: Failed to initialize canvas context.");
+	const context = canvas.getContext("bitmaprenderer", { alpha: false })!;
+	if (context == null) {
+		error("Error: Failed to initialize canvas context.");
+		return;
+	}
+
+	function message(msg: string | nul) {
+		if (msg != null) {
+			msgElem.textContent = msg;
+			msgElem.style.display = "block";
+		} else msgElem.style.display = "none";
+	}
+
+	function handleKeyEvent(e: KeyboardEvent) {
+		e.preventDefault();
+		e.stopPropagation();
+		e.returnValue = false;
+
+		socket.send(encodeUTF8("\x02\x01" + JSON.stringify({
+			type: e.type,
+			key: e.key
+		})), { compress: false });
+
+		return false;
+	}
+
+	function handleMouseEvent(e: MouseEvent) {
+		e.preventDefault();
+		e.stopPropagation();
+		e.returnValue = false;
+
+		socket.send(encodeUTF8("\x02\x01" + JSON.stringify({
+			type: e.type,
+			x: e.offsetX,
+			y: e.offsetY,
+			button: buttons[e.button]
+		})), { compress: false });
+
+		return false;
+	}
+
+	function handleWheelEvent(e: WheelEvent) {
+		e.preventDefault();
+		e.stopPropagation();
+		e.returnValue = false;
+
+		socket.send(encodeUTF8("\x02\x01" + JSON.stringify({
+			type: e.type,
+			deltaX: e.deltaX,
+			deltaY: e.deltaY
+		})), { compress: false });
+
+		return false;
+	}
+
+	function handleTouchEvent(e: TouchEvent) {
+		e.preventDefault();
+		e.stopPropagation();
+		e.returnValue = false;
+
+		const { type, touches } = e;
+
+		if (touches.length > 0) {
+			const rect = canvas.getBoundingClientRect();
+			for (const touch of touches) {
+				socket.send(encodeUTF8("\x02\x01" + JSON.stringify({
+					type: type,
+					x: touch.clientX - rect.x,
+					y: touch.clientY - rect.y
+				})), { compress: false });
+			}
+		} else socket.send(encodeUTF8("\x02\x01" + JSON.stringify({ type: type })), { compress: false });
+
+		return false;
+	}
+
+	function handleGenericEvent(e: Event) {
+		e.preventDefault();
+		e.stopPropagation();
+		e.returnValue = false;
+
+		canvas.focus({ preventScroll: true });
+		return false;
+	}
+
+	address.onblur = () => {
+		const page = pages[curTabId];
+		if (page != null)
+			address.value = page.url;
+	};
+	address.onfocus = () => {
+		address.select();
+	};
+	address.onkeydown = (e) => {
+		if (e.key === "Enter") {
+			e.preventDefault();
+			e.stopPropagation();
+
+			const input = address.value.trim();
+			if (input.length > 0) {
+				canvas.focus({ preventScroll: true });
+				socket.send(encodeUTF8("\x02\x08" + rewriteURL(input, "https://www.google.com/search?q=")), { compress: true });
+			}
+		}
+	};
+	address.ondragstart = (e) => {
+		e.preventDefault();
+		e.stopPropagation();
+		address.selectionEnd = address.selectionStart ||= 0;
+	};
+
+	$("back").onclick = () => {
+		socket.send(Uint8Array.of(2, 3), { compress: false });
+	};
+	$("forward").onclick = () => {
+		socket.send(Uint8Array.of(2, 4), { compress: false });
+	};
+	$("refresh").onclick = () => {
+		socket.send(Uint8Array.of(2, 5), { compress: false });
+	};
+	$("new-tab").onclick = () => {
+		socket.send(Uint8Array.of(2, 2), { compress: false });
+	};
+
+	canvas.addEventListener("wheel", handleWheelEvent);
+	canvas.addEventListener("keyup", handleKeyEvent, { passive: false });
+	canvas.addEventListener("keydown", handleKeyEvent, { passive: false });
+	canvas.addEventListener("mouseup", handleMouseEvent, { passive: false });
+	canvas.addEventListener("mousedown", handleMouseEvent, { passive: false });
+	canvas.addEventListener("mousemove", handleMouseEvent, { passive: false });
+	canvas.addEventListener("touchend", handleTouchEvent, { passive: false });
+	canvas.addEventListener("touchmove", handleTouchEvent, { passive: false });
+	canvas.addEventListener("touchstart", handleTouchEvent, { passive: false });
+	canvas.addEventListener("click", handleGenericEvent, { passive: false });
+	canvas.addEventListener("contextmenu", handleGenericEvent, { passive: false });
+
+	socket.on("open", () => {
+		message("Restoring session...");
+		socket.send(encodeUTF8("\x01" + options), { compress: true });
+	});
+	socket.on("close", (msg: string) => {
+		console.log("Connection closed: ", msg);
+		message("Disconnected from the backend server. Please check your internet connection.");
+	});
+	socket.on("message", (data: ArrayBufferLike) => {
+		const view = new Uint8Array(data);
+		if (view[0] === 0xff &&
+			view[1] === 0xd8 &&
+			view[2] === 0xff) {
+			createImageBitmap(new Blob([view], { type: "image/jpeg", endings: "native" }), 0, 0, canvas.width, canvas.height, {
+				resizeQuality: "pixelated",
+				imageOrientation: "none",
+				premultiplyAlpha: "none",
+				colorSpaceConversion: "none"
+			}).then((bitmap) => {
+				context.transferFromImageBitmap(bitmap);
+			}).catch((err) => {
+				console.error("Bitmap decode error: ", err);
+			});
 			return;
 		}
 
-		function message(msg: string | nul) {
-			if (msg != null) {
-				msgElem.textContent = msg;
-				msgElem.style.display = "block";
-			} else msgElem.style.display = "none";
-		}
-
-		function handleWheelEvent(e: WheelEvent) {
-			e.preventDefault();
-			e.stopPropagation();
-			e.returnValue = false;
-
-			socket.send(encodeUTF8("\x02\x01" + JSON.stringify({
-				type: e.type,
-				deltaX: e.deltaX,
-				deltaY: e.deltaY
-			})), { compress: false });
-
-			return false;
-		}
-
-		function handleKeyEvent(e: KeyboardEvent) {
-			e.preventDefault();
-			e.stopPropagation();
-			e.returnValue = false;
-
-			socket.send(encodeUTF8("\x02\x01" + JSON.stringify({
-				type: e.type,
-				key: e.key
-			})), { compress: false });
-
-			return false;
-		}
-
-		function handleMouseEvent(e: MouseEvent) {
-			e.preventDefault();
-			e.stopPropagation();
-			e.returnValue = false;
-
-			socket.send(encodeUTF8("\x02\x01" + JSON.stringify({
-				type: e.type,
-				x: e.offsetX,
-				y: e.offsetY,
-				button: buttons[e.button]
-			})), { compress: false });
-
-			return false;
-		}
-
-		function handleTouchEvent(e: TouchEvent) {
-			e.preventDefault();
-			e.stopPropagation();
-			e.returnValue = false;
-
-			const { type, touches } = e;
-
-			if (touches.length > 0) {
-				const rect = canvas.getBoundingClientRect();
-				for (const touch of touches) {
-					socket.send(encodeUTF8("\x02\x01" + JSON.stringify({
-						type: type,
-						x: touch.clientX - rect.x,
-						y: touch.clientY - rect.y
-					})), { compress: false });
+		const parts = decodeUTF8(view).split("\n", 10);
+		switch (parts[0]) {
+			case MessageID.url:
+				{
+					const url = parts[1] || "about:blank";
+					if (url.length > 0) {
+						const page = pages[curTabId];
+						if (page != null)
+							page.url = url;
+						if (doc.activeElement !== address)
+							address.value = url;
+					}
 				}
-			} else socket.send(encodeUTF8("\x02\x01" + JSON.stringify({ type: type })), { compress: false });
+				break;
+			case MessageID.ready:
+				{
+					const w = parseInt(parts[1], 36) || 1280;
+					const h = parseInt(parts[2], 36) || 720;
 
-			return false;
-		}
+					canvas.width = width = w;
+					canvas.height = height = h;
+					container.style.width = w + "px";
+					container.style.height = h + "px";
 
-		function handleGenericEvent(e: Event) {
-			e.preventDefault();
-			e.stopPropagation();
-			e.returnValue = false;
+					for (const page of pages)
+						socket.send(encodeUTF8("\x02\x02" + page.url));
+					if (curTabId === -1)
+						socket.send(encodeUTF8("\x02\x02" + (search.get("q") || "")));
+					else
+						socket.send(Uint8Array.of(2, 6, curTabId), { compress: false });
 
-			canvas.focus({ preventScroll: true });
-			return false;
-		}
-
-		function startOrRestoreSession() {
-			socket.removeAllListeners("message");
-			socket.send(encodeUTF8("\x01" + options), { compress: true });
-
-			let width: number = 1280;
-			let height: number = 720;
-
-			socket.on("message", (data: ArrayBuffer) => {
-				const view = new Uint8Array(data);
-				if (view[0] === 0xff &&
-					view[1] === 0xd8 &&
-					view[2] === 0xff) {
-					createImageBitmap(new Blob([view], { type: "image/jpeg", endings: "native" }), 0, 0, width, height, {
-						resizeQuality: "pixelated",
-						imageOrientation: "none",
-						premultiplyAlpha: "none",
-						colorSpaceConversion: "none"
-					}).then((bitmap) => {
-						context.transferFromImageBitmap(bitmap);
-					}).catch((err) => {
-						console.error("Bitmap decode error: ", err);
-					});
-					return;
-				}
-
-				const parts = decodeUTF8(view).split("\n", 10);
-				switch (parts[0]) {
-					case MessageID.url:
-						{
-							const url = parts[1] || "about:blank";
-							if (url.length > 0) {
-								const page = pages[currentTabId];
-								if (page != null)
-									page.url = url;
-								if (doc.activeElement !== address)
-									address.value = url;
-							}
-						}
-						break;
-					case MessageID.ready:
-						{
-							const width = parseInt(parts[1], 36) || 1280;
-							const height = parseInt(parts[2], 36) || 720;
-
-							canvas.width = width;
-							canvas.height = height;
-							container.style.width = width + "px";
-							container.style.height = height + "px";
-
-							for (const page of pages)
-								socket.send(encodeUTF8("\x02\x02" + page.url));
-							if (currentTabId === -1)
-								socket.send(encodeUTF8("\x02\x02" + (search.get("q") || "")));
-							else
-								socket.send(Uint8Array.of(2, 6, currentTabId), { compress: false });
-
-							message(null);
-							canvas.focus({ preventScroll: true });
-						}
-						break;
-					case MessageID.tabopen:
-						{
-							const elem = doc.createElement("div");
-							elem.innerHTML = "<img src=\"res/empty.ico\" width=\"19\" height=\"19\" draggable=\"false\" decoding=\"async\" loading=\"lazy\" alt=\"Site Icon\" /><div>Untitled</div>";
-							elem.onclick = (e) => {
-								e.preventDefault();
-								e.stopPropagation();
-
-								for (const e of tabElems)
-									e.removeAttribute("data-current");
-
-								address.value = page.url;
-								elem.setAttribute("data-current", "");
-								socket.send(Uint8Array.of(2, 6, currentTabId = pages.indexOf(page, 0)), { compress: false });
-							};
-
-							{
-								const e = doc.createElement("button");
-								e.type = "button";
-								e.title = "Close";
-								e.onclick = () => {
-									socket.send(Uint8Array.of(2, 7, pages.indexOf(page, 0)), { compress: false });
-								};
-								elem.appendChild(e);
-							}
-
-							const page: PageInfo = Object.preventExtensions(Object.setPrototypeOf({
-								url: "",
-								title: "",
-								favicon: ""
-							}, null));
-
-							for (const e of tabElems)
-								e.removeAttribute("data-current");
-
-							elem.setAttribute("data-current", "");
-							currentTabId = pages.length;
-							tabs.appendChild(elem);
-							pages.push(page);
-						}
-						break;
-					case MessageID.tabinfo:
-						{
-							const id = parseInt(parts[1], 36) || 0;
-							const tab = tabElems[id];
-							const page = pages[id];
-							const title = parts[2] || "Untitled";
-							const favicon = parts[3] || "/res/empty.ico";
-
-							if (tab != null) {
-								tab.querySelector("div")!.textContent = title;
-								tab.querySelector("img")!.src = favicon;
-							}
-							if (page != null) {
-								page.title = title;
-								page.favicon = favicon;
-							}
-						}
-						break;
-					case MessageID.tabclose:
-						{
-							const id = parseInt(parts[1], 36) || 0;
-							if (id >= 0 && id < pages.length) {
-								if (id === currentTabId) {
-									if (id > 1) {
-										currentTabId = id - 1;
-										address.value = pages[currentTabId].url;
-										tabElems[currentTabId].setAttribute("data-current", "");
-									} else {
-										currentTabId = 0;
-										address.value = pages[0].url;
-										tabElems[0].setAttribute("data-current", "");
-									}
-								}
-
-								tabElems[id].remove();
-								pages.splice(id, 1);
-							}
-						}
-						break;
-					default:
-						console.error("Received invalid message: ", parts);
-						break;
-				}
-			});
-		}
-
-		address.onblur = () => {
-			const page = pages[currentTabId];
-			if (page != null)
-				address.value = page.url;
-		};
-		address.onfocus = () => {
-			address.select();
-		};
-		address.onkeydown = (e) => {
-			if (e.key === "Enter") {
-				e.preventDefault();
-				e.stopPropagation();
-
-				const input = address.value.trim();
-				if (input.length > 0) {
+					message(null);
 					canvas.focus({ preventScroll: true });
-					socket.send(encodeUTF8("\x02\x08" + rewriteURL(input, "https://www.google.com/search?q=")), { compress: true });
 				}
-			}
-		};
-		address.ondragstart = (e) => {
-			e.preventDefault();
-			e.stopPropagation();
-			address.selectionEnd = address.selectionStart ||= 0;
-		};
+				break;
+			case MessageID.tabopen:
+				{
+					const elem = doc.createElement("div");
+					elem.innerHTML = "<img src=\"res/empty.ico\" width=\"19\" height=\"19\" draggable=\"false\" decoding=\"async\" loading=\"lazy\" alt=\"Site Icon\" /><div>Untitled</div>";
+					elem.onclick = (e) => {
+						e.preventDefault();
+						e.stopPropagation();
 
-		$("back").onclick = () => {
-			socket.send(Uint8Array.of(2, 3), { compress: false });
-		};
-		$("forward").onclick = () => {
-			socket.send(Uint8Array.of(2, 4), { compress: false });
-		};
-		$("refresh").onclick = () => {
-			socket.send(Uint8Array.of(2, 5), { compress: false });
-		};
-		$("new-tab").onclick = () => {
-			socket.send(Uint8Array.of(2, 2), { compress: false });
-		};
+						for (const e of tabElems)
+							e.removeAttribute("data-current");
 
-		canvas.addEventListener("wheel", handleWheelEvent);
-		canvas.addEventListener("keyup", handleKeyEvent, { passive: false });
-		canvas.addEventListener("keydown", handleKeyEvent, { passive: false });
-		canvas.addEventListener("mouseup", handleMouseEvent, { passive: false });
-		canvas.addEventListener("mousedown", handleMouseEvent, { passive: false });
-		canvas.addEventListener("mousemove", handleMouseEvent, { passive: false });
-		canvas.addEventListener("touchend", handleTouchEvent, { passive: false });
-		canvas.addEventListener("touchmove", handleTouchEvent, { passive: false });
-		canvas.addEventListener("touchstart", handleTouchEvent, { passive: false });
-		canvas.addEventListener("click", handleGenericEvent, { passive: false });
-		canvas.addEventListener("contextmenu", handleGenericEvent, { passive: false });
+						address.value = page.url;
+						elem.setAttribute("data-current", "");
+						socket.send(Uint8Array.of(2, 6, curTabId = pages.indexOf(page, 0)), { compress: false });
+					};
 
-		socket.on("close", (msg, desc) => {
-			console.log("Connection closed", msg, desc);
-			message("Disconnected from the backend server. Please check your internet connection.");
-		});
-		socket.on("open", () => {
-			message("Restoring session...");
-			startOrRestoreSession();
-		});
+					{
+						const e = doc.createElement("button");
+						e.type = "button";
+						e.title = "Close";
+						e.onclick = () => {
+							socket.send(Uint8Array.of(2, 7, pages.indexOf(page, 0)), { compress: false });
+						};
+						elem.appendChild(e);
+					}
 
-		message("Requesting new session...");
-		startOrRestoreSession();
-	}
+					const page: PageInfo = Object.preventExtensions(Object.setPrototypeOf({
+						url: "",
+						title: "",
+						favicon: ""
+					}, null));
+
+					for (const e of tabElems)
+						e.removeAttribute("data-current");
+
+					elem.setAttribute("data-current", "");
+					curTabId = pages.length;
+					tabs.appendChild(elem);
+					pages.push(page);
+				}
+				break;
+			case MessageID.tabinfo:
+				{
+					const id = parseInt(parts[1], 36) || 0;
+					const tab = tabElems[id];
+					const page = pages[id];
+					const title = parts[2] || "Untitled";
+					const favicon = parts[3] || "/res/empty.ico";
+
+					if (tab != null) {
+						tab.querySelector("div")!.textContent = title;
+						tab.querySelector("img")!.src = favicon;
+					}
+					if (page != null) {
+						page.title = title;
+						page.favicon = favicon;
+					}
+				}
+				break;
+			case MessageID.tabclose:
+				{
+					const id = parseInt(parts[1], 36) || 0;
+					if (id >= 0 && id < pages.length) {
+						if (id === curTabId) {
+							if (id > 1) {
+								curTabId = id - 1;
+								address.value = pages[curTabId].url;
+								tabElems[curTabId].setAttribute("data-current", "");
+							} else {
+								curTabId = 0;
+								address.value = pages[0].url;
+								tabElems[0].setAttribute("data-current", "");
+							}
+						}
+
+						tabElems[id].remove();
+						pages.splice(id, 1);
+					}
+				}
+				break;
+			default:
+				console.error("Received invalid message: ", parts);
+				break;
+		}
+	});
+
+	message("Requesting new session...");
+	socket.send(encodeUTF8("\x01" + options), { compress: true });
 })(window);
