@@ -3,8 +3,8 @@
 	"main": "main.js",
 	"private": true,
 	"dependencies": {
+		"eiows": "^7.1.2",
 		"engine.io": "^6.6.4",
-		"pm2": "^5.4.3",
 		"puppeteer": "^24.2.0"
 	},
 	"devDependencies": {
