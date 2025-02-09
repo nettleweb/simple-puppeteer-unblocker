@@ -7,8 +7,8 @@ const data = worker.workerData;
 if (worker.isMainThread || port == null || data == null || typeof data !== "object")
     throw new Error("Invalid script execution context");
 const touch = data.touch || false;
-const width = Math.max(Math.min(data.width || 1280, 1600), 300);
-const height = Math.max(Math.min(data.height || 720, 1600), 300);
+const width = Math.max(Math.min(data.width || 1280, 1280), 300);
+const height = Math.max(Math.min(data.height || 720, 1280), 300);
 const dataDir = process.argv[2];
 const landscape = width >= height;
 let focused = -1;
@@ -35,11 +35,11 @@ const chrome = await puppeteer.launch({
     executablePath: fs.existsSync("./local/chrome/chrome") ? "./local/chrome/chrome" : puppeteer.executablePath("chrome"),
     protocolTimeout: 5000,
     defaultViewport: {
-        width: 1280,
-        height: 720,
+        width: width,
+        height: height,
         isMobile: false,
-        hasTouch: false,
-        isLandscape: true,
+        hasTouch: touch,
+        isLandscape: landscape,
         deviceScaleFactor: 1
     },
     downloadBehavior: {
@@ -363,7 +363,7 @@ const loop = async () => {
         }
         port.postMessage(buffer, [buffer.buffer]);
     }
-    setTimeout(loop, 100);
+    setTimeout(loop, 150);
 };
 port.postMessage(Buffer.from("1" /* MessageID.ready */ + "\n" + width.toString(36) + "\n" + height.toString(36), "utf-8"));
 await loop();
