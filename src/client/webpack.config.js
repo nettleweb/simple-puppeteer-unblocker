@@ -48,7 +48,7 @@ const config = {
 	optimization: {
 		minimize: true,
 		minimizer: [new TerserPlugin({
-			parallel: true,
+			parallel: false,
 			terserOptions: {
 				ecma: 2017,
 				mangle: true,
@@ -80,7 +80,10 @@ const config = {
 				}
 			}
 		})],
+		sideEffects: true,
+		usedExports: true,
 		runtimeChunk: false,
+		mangleExports: true,
 		checkWasmTypes: true,
 		providedExports: true,
 		removeEmptyChunks: true,
