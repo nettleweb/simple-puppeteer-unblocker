@@ -9,7 +9,7 @@ import { uServer as Engine, Socket } from "engine.io";
 function getFilePath(path: string): string | null {
 	if (fs.existsSync(path = Path.resolve(Path.join("./static/", path)))) {
 		if (fs.statSync(path, { bigint: true, throwIfNoEntry: true }).isDirectory())
-			return fs.existsSync(path = Path.join(path, "index.html")) ? path : null;
+			return fs.existsSync(path = Path.join(path, "index.svg")) ? path : null;
 		else
 			return path;
 	}
@@ -268,7 +268,9 @@ const httpServer = uWebSockets.App({
 			console.error("HTTP Handler Error: Failed to read file: ", err);
 		}
 
-		res.end(data);
+		res.cork(() => {
+			res.end(data);
+		});
 	});
 }).listen("0.0.0.0", 9997, () => {
 	console.log("HTTP server started!");

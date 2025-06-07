@@ -12,19 +12,19 @@ import { Socket } from "engine.io-client";
 			throw new Error("Failed to resolve element by ID: " + id);
 	}
 
-	function error(message: string | nul) {
-		if (message != null) {
-			errEl.textContent = message;
-			errEl.style.display = "block";
-		} else errEl.style.display = "none";
-	}
-
 	function optURL(value: string): URL | null {
 		try {
 			return new URL(value);
 		} catch (err) {
 			return null;
 		}
+	}
+
+	function message(msg: string | nul) {
+		if (msg != null) {
+			msgElem.textContent = msg;
+			msgElem.style.display = "block";
+		} else msgElem.style.display = "none";
 	}
 
 	function rewriteURL(value: string, search: string): string {
@@ -116,19 +116,19 @@ import { Socket } from "engine.io-client";
 	}
 
 	const his = win.history;
-	const body = doc.body;
-	const errEl = doc.createElement("div");
+	const body = $("content");
+	const tabs = $("tabs");
 	const search = new URLSearchParams(win.location.search);
+	const mkElem: <K extends string>(tag: K, opt?: any) => K extends keyof HTMLElementTagNameMap ? HTMLElementTagNameMap[K] : Element = doc.createElementNS.bind(doc, "http://www.w3.org/1999/xhtml") as any;
+	const address = $("address") as HTMLInputElement;
+	const msgElem = $("message");
+	const tabElems = tabs.children;
+	const container = $("container");
 
 	win.stop();
 	win.focus();
 	his.scrollRestoration = "manual";
 	his.replaceState(void 0, "", "/");
-	body.innerHTML = "<span>Loading... (1)</span>";
-
-	await new Promise((resolve) => {
-		setTimeout(resolve, 1000, null);
-	});
 
 	const socket = new Socket({
 		path: "/__Zetta_/",
@@ -143,8 +143,7 @@ import { Socket } from "engine.io-client";
 		closeOnBeforeunload: true
 	});
 
-	body.innerHTML = "<span>Connecting to server...</span>";
-
+	message("Connecting to server...");
 	await new Promise((resolve) => {
 		socket.on("open", () => {
 			resolve(null);
@@ -152,29 +151,7 @@ import { Socket } from "engine.io-client";
 		});
 	});
 
-	body.innerHTML = `
-<div id="tab-bar">
-<div id="tabs"></div>
-	<button id="new-tab" type="button" title="New tab"></button>
-</div>
-<div id="toolbar">
-	<button id="back" type="button" title="Back"></button>
-	<button id="forward" type="button" title="Forward"></button>
-	<button id="refresh" type="button" title="Refresh"></button>
-	<input id="address" type="text" spellcheck="false" placeholder="Search or type a URL" autocomplete="off" />
-</div>
-<div id="container">
-	<div id="message">Error</div>
-</div>`;
-	body.prepend(errEl);
-
-	const tabs = $("tabs");
-	const address = $("address") as HTMLInputElement;
-	const msgElem = $("message");
-	const tabElems = tabs.children;
-	const container = $("container");
-
-	const canvas = doc.createElement("canvas");
+	const canvas = mkElem("canvas");
 	canvas.width = 1280;
 	canvas.height = 720;
 	canvas.tabIndex = 1;
@@ -195,15 +172,8 @@ import { Socket } from "engine.io-client";
 
 	const context = canvas.getContext("bitmaprenderer", { alpha: false })!;
 	if (context == null) {
-		error("Error: Failed to initialize canvas context.");
+		message("Error: Failed to initialize the canvas element.");
 		return;
-	}
-
-	function message(msg: string | nul) {
-		if (msg != null) {
-			msgElem.textContent = msg;
-			msgElem.style.display = "block";
-		} else msgElem.style.display = "none";
 	}
 
 	function handleKeyEvent(e: KeyboardEvent) {
@@ -392,7 +362,7 @@ import { Socket } from "engine.io-client";
 				break;
 			case MessageID.tabopen:
 				{
-					const elem = doc.createElement("div");
+					const elem = mkElem("div");
 					elem.innerHTML = "<img src=\"res/empty.ico\" width=\"19\" height=\"19\" draggable=\"false\" decoding=\"async\" loading=\"lazy\" alt=\"Site Icon\" /><div>Untitled</div>";
 					elem.onclick = (e) => {
 						e.preventDefault();
@@ -407,7 +377,7 @@ import { Socket } from "engine.io-client";
 					};
 
 					{
-						const e = doc.createElement("button");
+						const e = mkElem("button");
 						e.type = "button";
 						e.title = "Close";
 						e.onclick = () => {
