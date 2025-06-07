@@ -40,9 +40,11 @@ const config = {
 		globalObject: "window"
 	},
 	resolve: {
-		extensions: [".js", ".ts"],
+		cache: false,
 		symlinks: false,
-		cache: false
+		extensions: [".js", ".ts"],
+		preferAbsolute: true,
+		useSyncFileSystemCalls: true
 	},
 	performance: { hints: false },
 	optimization: {
@@ -75,6 +77,7 @@ const config = {
 					unsafe: true,
 					arguments: true,
 					hoist_funs: true,
+					hoist_vars: true,
 					keep_fargs: false,
 					drop_console: true
 				}
@@ -84,7 +87,6 @@ const config = {
 		usedExports: true,
 		runtimeChunk: false,
 		mangleExports: true,
-		checkWasmTypes: true,
 		providedExports: true,
 		removeEmptyChunks: true,
 		concatenateModules: true

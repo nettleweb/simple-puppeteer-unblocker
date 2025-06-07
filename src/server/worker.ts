@@ -1,7 +1,7 @@
 import fs from "fs";
 import worker from "worker_threads";
 import process from "process";
-import puppeteer from "puppeteer";
+import puppeteer from "puppeteer-core";
 
 const port = worker.parentPort!;
 const data = worker.workerData;

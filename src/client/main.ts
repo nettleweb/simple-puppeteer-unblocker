@@ -131,12 +131,13 @@ import { Socket } from "engine.io-client";
 	});
 
 	const socket = new Socket({
-		path: "/%FD%BF%80%90%80%81%0A/",
+		path: "/__Zetta_/",
 		//secure: true,
 		upgrade: true,
 		protocols: [],
 		transports: ["polling", "websocket"],
-		timestampParam: "v",
+		timestampParam: "x",
+		addTrailingSlash: true,
 		timestampRequests: true,
 		rejectUnauthorized: true,
 		closeOnBeforeunload: true

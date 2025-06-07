@@ -1,15 +1,14 @@
 import fs from "fs";
 import dns from "dns";
 import Path from "path";
-import http from "http";
-import stream from "stream";
 import worker from "worker_threads";
 import process from "process";
-import { Server, Socket } from "engine.io";
+import uWebSockets from "uWebSockets.js";
+import { uServer as Engine, Socket } from "engine.io";
 
 function getFilePath(path: string): string | null {
 	if (fs.existsSync(path = Path.resolve(Path.join("./static/", path)))) {
-		if (fs.lstatSync(path, { bigint: true, throwIfNoEntry: true }).isDirectory())
+		if (fs.statSync(path, { bigint: true, throwIfNoEntry: true }).isDirectory())
 			return fs.existsSync(path = Path.join(path, "index.html")) ? path : null;
 		else
 			return path;
@@ -17,137 +16,114 @@ function getFilePath(path: string): string | null {
 	return null;
 }
 
-function getFileMimeType(path: string): string {
+function getMimeType(path: string): string {
 	switch (Path.extname(path)) {
-		case ".js":
-			return "text/javascript";
-		case ".css":
-			return "text/css";
-		case ".txt":
-			return "text/plain";
-		case ".svg":
-			return "image/svg+xml";
+		// image
 		case ".png":
 			return "image/png";
+		case ".apng":
+			return "image/apng";
+		case ".avif":
+			return "image/avif";
+		case ".bmp":
+			return "image/bmp";
+		case ".gif":
+			return "image/gif";
 		case ".ico":
 			return "image/x-icon";
 		case ".jpg":
 		case ".jpeg":
 			return "image/jpeg";
+		case ".svg":
+			return "image/svg+xml";
+		case ".tif":
+		case ".tiff":
+			return "image/tiff";
+		case ".webp":
+			return "image/webp";
+
+		// audio
+		case ".aac":
+			return "audio/aac";
+		case ".flac":
+			return "audio/flac";
+		case ".mid":
+		case ".midi":
+			return "audio/midi";
+		case ".mp3":
+			return "audio/mpeg";
+		case ".oga":
+		case ".ogg":
+		case ".opus":
+			return "audio/ogg";
+		case ".wav":
+			return "audio/wav";
+		case ".weba":
+			return "audio/webm";
+
+		// video
+		case ".avi":
+			return "video/x-msvideo";
+		case ".mp4":
+			return "video/mp4";
+		case ".mpeg":
+			return "video/mpeg";
+		case ".ogv":
+			return "video/ogg";
+		case ".ts":
+			return "video/mp2t";
+		case ".webm":
+			return "video/webm";
+
+		// fonts
+		case ".otf":
+			return "font/otf";
+		case ".ttf":
+			return "font/ttf";
+		case ".woff":
+			return "font/woff";
 		case ".woff2":
 			return "font/woff2";
+
+		// misc
+		case ".js":
+		case ".cjs":
+		case ".mjs":
+			return "text/javascript";
+		case ".css":
+			return "text/css";
+		case ".csv":
+			return "text/csv";
+		case ".txt":
+			return "text/plain";
+		case ".pdf":
+			return "application/pdf";
+		case ".rtf":
+			return "application/rtf";
 		case ".xml":
 			return "application/xml";
 		case ".json":
 			return "application/json";
+		case ".wasm":
+			return "application/wasm";
 		case ".htm":
-		case ".xht":
 		case ".html":
+			return "text/html";
+		case ".xht":
 		case ".xhtml":
 			return "application/xhtml+xml";
+
+		// fallback
 		default:
 			return "application/octet-stream";
 	}
 }
 
-function handleRequest(req: http.IncomingMessage, res: http.ServerResponse) {
-	const method = req.method;
-	const headers = req.headers;
-	const rawPath = req.url;
-	const host = headers.host;
-
-	if (method == null || rawPath == null || host == null || rawPath[0] !== "/") {
-		res.writeHead(400, "", { "Content-Type": "text/plain" });
-		res.end("400 Bad Request", "utf-8");
-		return;
-	}
-
-	if (rawPath.startsWith("/%FD%BF%80%90%80%81%0A/")) {
-		eio.handleRequest(req as any, res);
-		return;
-	}
-
-	switch (method) {
-		case "GET":
-		case "HEAD":
-			break;
-		case "OPTIONS":
-			res.writeHead(200, "", {
-				"Allow": "GET, HEAD, OPTIONS"
-			});
-			res.end();
-			return;
-		default:
-			res.writeHead(405, "", {
-				"Allow": "GET, HEAD, OPTIONS",
-				"Content-Type": "text/plain"
-			});
-			res.end("405 Method Not Allowed", "utf-8");
-			return;
-	}
-
-	const url = new URL(rawPath, "https://nettleweb.com/");
-	const path = getFilePath(url.pathname);
-
-	if (path != null) {
-		res.writeHead(200, "", {
-			"Content-Type": getFileMimeType(path),
-			"Content-Length": fs.statSync(path, { bigint: true, throwIfNoEntry: true }).size.toString(10),
-			"Referrer-Policy": "no-referrer",
-			"Permissions-Policy": "camera=(), gyroscope=(), microphone=(), geolocation=(), local-fonts=(), magnetometer=(), accelerometer=(), idle-detection=(), storage-access=(), browsing-topics=(), display-capture=(), encrypted-media=(), compute-pressure=(), window-management=(), xr-spatial-tracking=(), attribution-reporting=()",
-			"X-Content-Type-Options": "nosniff",
-			"Content-Security-Policy": "img-src 'self' data:; base-uri 'self'; font-src 'self'; child-src 'self'; frame-src 'self'; media-src 'self'; style-src 'self'; object-src 'self'; script-src 'self'; worker-src 'self'; connect-src 'self'; default-src 'self'; manifest-src 'self'; sandbox allow-scripts allow-same-origin; upgrade-insecure-requests",
-			"Cross-Origin-Opener-Policy": "same-origin",
-			"Cross-Origin-Resource-Policy": "same-origin",
-			"Cross-Origin-Embedder-Policy": "require-corp"
-		});
-
-		if (method === "HEAD") {
-			res.end();
-			return;
-		}
-
-		fs.createReadStream(path, {
-			start: 0,
-			autoClose: true,
-			emitClose: true,
-			highWaterMark: 32768
-		}).pipe(res, { end: true });
-	} else {
-		res.writeHead(404, "", { "Content-Type": "text/plain" });
-		res.end("404 Not Found", "utf-8");
-	}
-}
-
-function handleUpgrade(req: http.IncomingMessage, sock: stream.Duplex, head: Buffer) {
-	const path = req.url;
-	const host = req.headers.host;
-
-	if (path == null || host == null || path[0] !== "/") {
-		sock.end("Bad Request", "utf-8");
-		return;
-	}
-
-	if (path.startsWith("/%FD%BF%80%90%80%81%0A/"))
-		eio.handleUpgrade(req as any, sock, head);
-	else
-		sock.end("Forbidden", "utf-8");
-}
-
 function handleSignal(signal: string) {
-	if (Reflect.get(process, "__closing") == null) {
-		stderr.write("\n\nReceived signal: " + signal + "\n");
-		stderr.write("Stopping services...\n");
-		Reflect.set(process, "__closing", 1);
-
-		httpServer.closeAllConnections();
-		httpServer.close((err) => {
-			if (err != null)
-				console.log("[Ignore]", String(err));
-
-			process.exit(0);
-		});
-	}
+	stderr.write("\n\nReceived signal: " + signal + "\n");
+	stderr.write("Stopping services...\n");
+	httpServer.close();
+	process.exit(0);
 }
 
 ////////////////////////////////////////////////////////////
@@ -211,38 +187,105 @@ for (const arg of args) {
 // HTTP Server
 //////////////////////////////////////////////////
 
-const httpServer = http.createServer({
-	noDelay: false,
-	keepAlive: false,
-	maxHeaderSize: 8192,
-	requestTimeout: 15000
-}, void 0);
+const httpServer = uWebSockets.App({
+	passphrase: "__NettleWeb__"
+}).ws<any>("/__Zetta_/*", {
+	open: (ws) => {
+		const transport = ws.getUserData().transport;
+		transport.socket = ws;
+		transport.writable = true;
+		transport.emit("ready");
+	},
+	close: (ws, code, msg) => {
+		ws.getUserData().transport.onClose(code, msg);
+	},
+	message: (ws, msg, bin) => {
+		ws.getUserData().transport.onData(bin ? msg.slice(0, msg.byteLength) : Buffer.from(msg).toString("utf-8"));
+	},
+	upgrade: (res, req, ctx) => {
+		(eio as any).handleUpgrade(res, req, ctx);
+	},
+	compression: uWebSockets.SHARED_COMPRESSOR | uWebSockets.SHARED_DECOMPRESSOR,
+	idleTimeout: 60,
+	maxPayloadLength: 15000000,
+	sendPingsAutomatically: true,
+	closeOnBackpressureLimit: true
+}).any("/*", (res, req) => {
+	const path = decodeURIComponent(req.getUrl());
+	const method = req.getCaseSensitiveMethod();
 
-httpServer.on("request", handleRequest);
-httpServer.on("upgrade", handleUpgrade);
-httpServer.on("error", (err) => {
-	console.error("HTTP Server Error: ", err);
-});
+	if (path.startsWith("/__Zetta_/")) {
+		(eio as any).handleRequest(res, req);
+		return;
+	}
 
-httpServer.listen(9801, "0.0.0.0", 255, () => {
-	let address = httpServer.address() || "unknown address";
-	if (typeof address !== "string")
-		address = address.address + ":" + address.port;
-	console.log("HTTP server started on " + address);
+	switch (req.getCaseSensitiveMethod()) {
+		case "GET":
+		case "HEAD":
+			break;
+		case "OPTIONS":
+			res.writeStatus("200").writeHeader("Allow", "GET, HEAD, OPTIONS").end();
+			return;
+		default:
+			res.writeStatus("405")
+				.writeHeader("Allow", "GET, HEAD, OPTIONS")
+				.writeHeader("Content-Type", "text/plain")
+				.end("405 Method Not Allowed", true);
+			return;
+	}
+
+	const file = getFilePath(path);
+	if (file == null) {
+		res.writeStatus("404").writeHeader("Content-Type", "text/plain").end("404 Not Found");
+		return;
+	}
+
+	res.writeStatus("200").writeHeader("Content-Type", getMimeType(file))
+		.writeHeader("Referrer-Policy", "no-referrer")
+		.writeHeader("Permissions-Policy", "camera=(), gyroscope=(), microphone=(), geolocation=(), local-fonts=(), magnetometer=(), accelerometer=(), idle-detection=(), storage-access=(), browsing-topics=(), display-capture=(), encrypted-media=(), compute-pressure=(), window-management=(), xr-spatial-tracking=(), attribution-reporting=()")
+		.writeHeader("X-Content-Type-Options", "img-src 'self' data:; base-uri 'self'; font-src 'self'; child-src 'self'; frame-src 'self'; media-src 'self'; style-src 'self'; object-src 'self'; script-src 'self'; worker-src 'self'; connect-src 'self'; default-src 'self'; manifest-src 'self'; sandbox allow-scripts allow-same-origin; upgrade-insecure-requests")
+		.writeHeader("Cross-Origin-Opener-Policy", "same-origin")
+		.writeHeader("Cross-Origin-Embedder-Policy", "require-corp");
+
+	const size = fs.statSync(file, { bigint: false, throwIfNoEntry: true }).size;
+	if (method === "HEAD" || size === 0) {
+		res.endWithoutBody(size);
+		return;
+	}
+
+	const controller = new AbortController();
+	const signal = controller.signal;
+
+	res.onAborted(() => {
+		controller.abort("client disconnected");
+	});
+
+	fs.readFile(file, { signal: signal }, (err, data) => {
+		if (err != null) {
+			if (!signal.aborted)
+				res.close();
+
+			console.error("HTTP Handler Error: Failed to read file: ", err);
+		}
+
+		res.end(data);
+	});
+}).listen("0.0.0.0", 9997, () => {
+	console.log("HTTP server started!");
 });
 
 //////////////////////////////////////////////////
 // socket.io
 //////////////////////////////////////////////////
 
-const eio = new Server({
+const eio = new Engine({
 	transports: ["polling", "websocket"],
 	pingTimeout: 10000,
 	pingInterval: 15000,
 	upgradeTimeout: 10000,
 	httpCompression: true,
 	perMessageDeflate: true,
-	maxHttpBufferSize: 1024
+	maxHttpBufferSize: 4096
 });
 
 eio.on("connection", (socket: Socket) => {
@@ -360,10 +403,3 @@ process.on("uncaughtException", (error, origin) => {
 process.on("unhandledRejection", () => {
 	// ignore
 });
-
-// send ready signal to pm2
-{
-	const send = process.send;
-	if (send != null)
-		send("ready", void 0, { keepOpen: false });
-}
