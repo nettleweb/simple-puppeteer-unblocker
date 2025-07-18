@@ -3,18 +3,17 @@
 	"main": "main.js",
 	"private": true,
 	"dependencies": {
-		"devtools-protocol": "^0.0.1470888",
 		"engine.io": "^6.6.4",
-		"puppeteer-core": "^24.10.0",
+		"puppeteer-core": "^24.14.0",
 		"uWebSockets.js": "uNetworking/uWebSockets.js#v20.52.0"
 	},
 	"devDependencies": {
-		"@types/node": "^22.15.30",
+		"@types/node": "^24.0.14",
 		"engine.io-client": "^6.6.3",
 		"terser-webpack-plugin": "^5.3.14",
 		"ts-loader": "^9.5.2",
 		"typescript": "^5.8.3",
-		"webpack": "^5.99.9",
+		"webpack": "^5.100.2",
 		"webpack-cli": "^6.0.1"
 	},
 	"scripts": {

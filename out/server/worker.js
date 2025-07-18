@@ -21,7 +21,6 @@ await fs.promises.cp("./local/chrome/data", dataDir, {
     preserveTimestamps: true
 });
 const chrome = await puppeteer.launch({
-    env: {},
     pipe: true,
     dumpio: true,
     browser: "chrome",
@@ -46,10 +45,16 @@ const chrome = await puppeteer.launch({
         policy: "deny",
         downloadPath: dataDir
     },
+    env: {
+        "PATH": "/sbin:/bin",
+        "LANG": "C",
+        "LC_ALL": "C"
+    },
     args: [
         "--use-angle=vulkan",
         "--enable-unsafe-webgpu",
         "--enable-features=Vulkan",
+        "--no-zygote",
         "--no-sandbox",
         "--disable-sync",
         "--disable-logging",
@@ -58,9 +63,11 @@ const chrome = await puppeteer.launch({
         "--disable-translate",
         "--disable-extensions",
         "--disable-default-apps",
+        "--disable-web-security",
         "--disable-notifications",
         "--disable-dev-shm-usage",
         "--disable-setuid-sandbox",
+        "--disable-features=IsolateOrigins,site-per-process",
         "--window-name=\"\ud800\"",
         "--window-size=1280,720",
         "--window-position=0,0"

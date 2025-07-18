@@ -261,16 +261,17 @@ const httpServer = uWebSockets.App({
 	});
 
 	fs.readFile(file, { signal: signal }, (err, data) => {
-		if (err != null) {
-			if (!signal.aborted)
+		if (!signal.aborted) {
+			if (err != null) {
+				console.error("HTTP Handler Error: Failed to read file: ", err);
 				res.close();
+				return;
+			}
 
-			console.error("HTTP Handler Error: Failed to read file: ", err);
+			res.cork(() => {
+				res.end(data);
+			});
 		}
-
-		res.cork(() => {
-			res.end(data);
-		});
 	});
 }).listen("0.0.0.0", 9997, () => {
 	console.log("HTTP server started!");
